@@ -5,7 +5,7 @@
 - One full trace waterfall
 - JSON logs showing correlation_id
 - Log line with PII redaction
-- Dashboard with 6 panels
+- Dashboard with 6 panels (docs/screenshots/dashboard-6panels.png)
 - Alert rules with runbook link (docs/screenshots/alert-rules.png)
 - Alert actually fired — log line showing alert_fired event (docs/screenshots/alert-fired.png)
 

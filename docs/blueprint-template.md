@@ -26,7 +26,7 @@
 - [TRACE_WATERFALL_EXPLANATION]: Span `agent.run` hiển thị toàn bộ pipeline xử lý một request. Trong sự kiện `rag_slow`, duration của span tăng từ ~155ms lên ~8000ms. Metadata của span cho thấy `doc_count` không đổi (RAG vẫn trả kết quả), trong khi `latency_ms` tăng đột biến — xác nhận tắc nghẽn nằm ở bước retrieval, không phải LLM generation.
 
 ### 3.2 Dashboard & SLOs
-- [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/Dashboards _ Langfuse.html
+- [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/dashboard-6panels.png
 - [SLO_TABLE]:
 | SLI | Target | Window | Current Value |
 |---|---:|---|---:|
@@ -44,7 +44,7 @@
 
 ## 4. Incident Response (Group)
 - [SCENARIO_NAME]: rag_slow
-- [SYMPTOMS_OBSERVED]: Latency tăng đột ngột từ ~165ms (baseline P50) lên ~8000ms mỗi request. Toàn bộ 10 requests trong thời gian incident vượt ngưỡng SLO 5000ms. Endpoint `/metrics` ghi nhận `latency_p95` nhảy lên 2674ms ngay cả sau khi tắt incident (do cửa sổ đo hỗn hợp).
+- [SYMPTOMS_OBSERVED]: Latency tăng đột ngột từ ~155ms (baseline P50) lên ~2650ms mỗi request. Toàn bộ request trong thời gian incident vượt ngưỡng alert 2000ms. Endpoint `/metrics` ghi nhận `latency_p95` nhảy lên 2668ms, trường `alerts_firing` trả về `["high_latency_p95"]`, log xuất hiện event `alert_fired` severity P2.
 - [ROOT_CAUSE_PROVED_BY]: Trace waterfall trên Langfuse — span `agent.run` kéo dài ~8000ms. Metadata span cho thấy `doc_count` bình thường (retrieval có kết quả), nhưng toàn bộ thời gian bị tiêu tốn trước khi tài liệu được trả về. Kiểm tra code tại `mock_rag.py:18`: `time.sleep(2.5)` kích hoạt khi `STATE["rag_slow"] = True`, chặn mọi request tại bước retrieval bất kể query.
 - [FIX_ACTION]: Tắt incident toggle qua `POST /incidents/rag_slow/disable`. Latency trở về baseline (~155ms P50) ngay lập tức ở các request tiếp theo.
 - [PREVENTIVE_MEASURE]: Thêm timeout cứng cho bước RAG retrieval (ví dụ 1000ms) với fallback về cached results. Alert `high_latency_p95` trong `config/alert_rules.yaml` sẽ kích hoạt sau 30 phút vượt ngưỡng, cho phép on-call tắt retrieval path chậm trước khi ảnh hưởng lan rộng.
