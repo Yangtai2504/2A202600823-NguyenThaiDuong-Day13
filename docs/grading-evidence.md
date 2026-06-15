@@ -6,7 +6,8 @@
 - JSON logs showing correlation_id
 - Log line with PII redaction
 - Dashboard with 6 panels
-- Alert rules with runbook link
+- Alert rules with runbook link (docs/screenshots/alert-rules.png)
+- Alert actually fired — log line showing alert_fired event (docs/screenshots/alert-fired.png)
 
 ## Optional screenshots
 - Incident before/after fix

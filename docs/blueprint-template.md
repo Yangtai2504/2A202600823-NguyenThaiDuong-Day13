@@ -37,6 +37,7 @@
 
 ### 3.3 Alerts & Runbook
 - [ALERT_RULES_SCREENSHOT]: docs/screenshots/alert-rules.png
+- [ALERT_FIRED_SCREENSHOT]: docs/screenshots/alert-fired.png
 - [SAMPLE_RUNBOOK_LINK]: docs/alerts.md#1-high-latency-p95
 
 ---
