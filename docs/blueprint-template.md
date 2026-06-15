@@ -115,5 +115,5 @@
 
 ## 6. Bonus Items (Optional)
 - [BONUS_COST_OPTIMIZATION]: N/A
-- [BONUS_AUDIT_LOGS]: N/A
+- [BONUS_AUDIT_LOGS]: Triển khai `app/audit.py` ghi audit log tách riêng vào `data/audit.jsonl`. Ghi 3 loại sự kiện: `request_audit` (mỗi request với user_id_hash, session, feature, pii_detected), `pii_redacted` (khi phát hiện PII ghi rõ correlation_id và loại field bị redact), `incident_control` (mỗi lần enable/disable incident). File audit hoàn toàn tách biệt với `data/logs.jsonl` — phục vụ mục đích kiểm toán bảo mật độc lập với log vận hành.
 - [BONUS_CUSTOM_METRIC]: Thêm 2 pattern PII bổ sung (`passport` dạng `[A-Z]\d{7}` cho hộ chiếu Việt Nam và `vn_address` neo theo từ khóa địa chỉ) ngoài 4 pattern mặc định của template, mở rộng độ phủ PII cho dữ liệu người dùng Việt Nam mà không ảnh hưởng đến điểm `validate_logs.py`.

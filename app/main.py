@@ -16,6 +16,7 @@ from .metrics import record_error, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
+from .audit import audit_incident, audit_pii_redaction, audit_request
 from .tracing import flush_traces, tracing_enabled
 
 configure_logging()
@@ -60,6 +61,22 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
         env=os.getenv("APP_ENV", "dev"),
     )
     
+    # Detect PII in raw message before scrubbing
+    from .pii import scrub_text, PII_PATTERNS
+    import re
+    fields_redacted = [name for name, pat in PII_PATTERNS.items() if re.search(pat, body.message)]
+    audit_request(
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        pii_detected=bool(fields_redacted),
+    )
+    if fields_redacted:
+        audit_pii_redaction(
+            correlation_id=request.state.correlation_id,
+            fields_redacted=fields_redacted,
+        )
+
     log.info(
         "request_received",
         service="api",
@@ -108,6 +125,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
 async def enable_incident(name: str) -> JSONResponse:
     try:
         enable(name)
+        audit_incident(name=name, action="enable")
         log.warning("incident_enabled", service="control", payload={"name": name})
         return JSONResponse({"ok": True, "incidents": status()})
     except KeyError as exc:
@@ -118,6 +136,7 @@ async def enable_incident(name: str) -> JSONResponse:
 async def disable_incident(name: str) -> JSONResponse:
     try:
         disable(name)
+        audit_incident(name=name, action="disable")
         log.warning("incident_disabled", service="control", payload={"name": name})
         return JSONResponse({"ok": True, "incidents": status()})
     except KeyError as exc:
