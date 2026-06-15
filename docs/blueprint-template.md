@@ -23,7 +23,7 @@
 - [EVIDENCE_CORRELATION_ID_SCREENSHOT]: docs/screenshots/correlation-id.png
 - [EVIDENCE_PII_REDACTION_SCREENSHOT]: docs/screenshots/redacted-email.png
 - [EVIDENCE_TRACE_WATERFALL_SCREENSHOT]: docs/screenshots/Trace-waterfall.png
-- [TRACE_WATERFALL_EXPLANATION]: The `LabAgent.run` span shows two child spans: the RAG retrieval step and the LLM generation step. During the `rag_slow` incident, the retrieval span ballooned to ~2500ms (vs. ~50ms baseline), while the LLM span remained stable — confirming RAG latency as the sole root cause.
+- [TRACE_WATERFALL_EXPLANATION]: Span `agent.run` hiển thị toàn bộ pipeline xử lý một request. Trong sự kiện `rag_slow`, duration của span tăng từ ~155ms lên ~8000ms. Metadata của span cho thấy `doc_count` không đổi (RAG vẫn trả kết quả), trong khi `latency_ms` tăng đột biến — xác nhận tắc nghẽn nằm ở bước retrieval, không phải LLM generation.
 
 ### 3.2 Dashboard & SLOs
 - [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/Dashboards _ Langfuse.html
@@ -43,10 +43,10 @@
 
 ## 4. Incident Response (Group)
 - [SCENARIO_NAME]: rag_slow
-- [SYMPTOMS_OBSERVED]: Latency spiked from ~165ms (P50 baseline) to ~8000ms per request. All 10 requests during the incident breached the 5000ms P95 SLO threshold. The `/metrics` endpoint showed `latency_p95` jumping to 2674ms even after incident was disabled (mixed window).
-- [ROOT_CAUSE_PROVED_BY]: Langfuse trace waterfall — the `retrieve()` span inside `LabAgent.run` showed a 2500ms sleep introduced by `STATE["rag_slow"] = True` in `mock_rag.py:18`. The LLM generation span duration was unchanged, isolating the fault to the RAG layer.
-- [FIX_ACTION]: Disabled `rag_slow` incident toggle via `POST /incidents/rag_slow/disable`. Latency returned to baseline (~165ms P50) immediately on next requests.
-- [PREVENTIVE_MEASURE]: Add a per-span timeout on the RAG retrieval call (e.g., 1000ms hard limit with fallback to cached results). Alert `high_latency_p95` in `config/alert_rules.yaml` would fire within 30m of sustained breach, enabling on-call to disable the slow retrieval path before user impact compounds.
+- [SYMPTOMS_OBSERVED]: Latency tăng đột ngột từ ~165ms (baseline P50) lên ~8000ms mỗi request. Toàn bộ 10 requests trong thời gian incident vượt ngưỡng SLO 5000ms. Endpoint `/metrics` ghi nhận `latency_p95` nhảy lên 2674ms ngay cả sau khi tắt incident (do cửa sổ đo hỗn hợp).
+- [ROOT_CAUSE_PROVED_BY]: Trace waterfall trên Langfuse — span `agent.run` kéo dài ~8000ms. Metadata span cho thấy `doc_count` bình thường (retrieval có kết quả), nhưng toàn bộ thời gian bị tiêu tốn trước khi tài liệu được trả về. Kiểm tra code tại `mock_rag.py:18`: `time.sleep(2.5)` kích hoạt khi `STATE["rag_slow"] = True`, chặn mọi request tại bước retrieval bất kể query.
+- [FIX_ACTION]: Tắt incident toggle qua `POST /incidents/rag_slow/disable`. Latency trở về baseline (~155ms P50) ngay lập tức ở các request tiếp theo.
+- [PREVENTIVE_MEASURE]: Thêm timeout cứng cho bước RAG retrieval (ví dụ 1000ms) với fallback về cached results. Alert `high_latency_p95` trong `config/alert_rules.yaml` sẽ kích hoạt sau 30 phút vượt ngưỡng, cho phép on-call tắt retrieval path chậm trước khi ảnh hưởng lan rộng.
 
 ---
 
@@ -57,57 +57,57 @@
 
   **1. Correlation ID Middleware (`app/middleware.py`)**
 
-  Implemented `CorrelationIdMiddleware` using Starlette's `BaseHTTPMiddleware`. Key design decisions:
-  - Called `clear_contextvars()` at the start of every request to prevent context leakage between concurrent requests in async environments — without this, structlog context from a previous request could bleed into the next one sharing the same worker.
-  - Used `request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex[:8]}"` — the `or` pattern means external clients (e.g. a frontend or API gateway) can inject their own trace ID for end-to-end correlation, while the server generates one if absent.
-  - Bound `correlation_id` via `bind_contextvars()` so it appears automatically in every subsequent log line within the request without passing it manually through function calls.
-  - Added `x-response-time-ms` to response headers — enables client-side latency monitoring without needing to parse server logs.
+  Triển khai `CorrelationIdMiddleware` sử dụng `BaseHTTPMiddleware` của Starlette. Các quyết định thiết kế quan trọng:
+  - Gọi `clear_contextvars()` đầu mỗi request để tránh rò rỉ context giữa các request đồng thời trong môi trường async — nếu không có bước này, context structlog của request trước có thể bị kế thừa sang request tiếp theo chạy trên cùng worker.
+  - Dùng pattern `request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex[:8]}"` — cho phép client bên ngoài (frontend, API gateway) tự inject trace ID để theo dõi end-to-end, server chỉ tự sinh nếu client không gửi kèm.
+  - Bind `correlation_id` vào `bind_contextvars()` để ID này tự động xuất hiện trong mọi dòng log tiếp theo trong request mà không cần truyền tay qua từng hàm.
+  - Thêm `x-response-time-ms` vào response header — cho phép client theo dõi latency mà không cần parse server log.
 
-  **2. Log Enrichment (`app/main.py`)**
+  **2. Làm giàu Log (`app/main.py`)**
 
-  Added `bind_contextvars()` at the start of each `/chat` request binding: `user_id_hash`, `session_id`, `feature`, `model`, `env`. Key decisions:
-  - Used `hash_user_id()` (SHA-256, 12-char prefix) instead of raw user ID — satisfies PII policy while still allowing grouping of traces by user across sessions.
-  - Binding to structlog context (not passing as args) means all log lines — including those emitted deep inside `agent.py` — automatically carry these fields, enabling log-based fan-out queries like "all errors from feature=qa in the last hour".
+  Thêm `bind_contextvars()` đầu mỗi request `/chat` để bind: `user_id_hash`, `session_id`, `feature`, `model`, `env`. Lý do thiết kế:
+  - Dùng `hash_user_id()` (SHA-256, lấy 12 ký tự đầu) thay vì user ID thật — tuân thủ chính sách PII trong khi vẫn cho phép nhóm trace theo người dùng qua các session.
+  - Bind vào context structlog (không truyền qua tham số hàm) để các dòng log sinh ra sâu bên trong `agent.py` cũng tự động mang đủ context — hỗ trợ truy vấn kiểu "tất cả lỗi từ feature=qa trong 1 giờ qua".
 
-  **3. PII Scrubbing Pipeline (`app/logging_config.py` + `app/pii.py`)**
+  **3. Pipeline Scrub PII (`app/logging_config.py` + `app/pii.py`)**
 
-  Activated `scrub_event` as a structlog processor inserted before `JsonlFileProcessor()`. This placement is critical: the processor runs in-memory before any bytes are written to disk, guaranteeing PII never persists.
+  Kích hoạt `scrub_event` là một structlog processor, đặt trước `JsonlFileProcessor()`. Vị trí này quan trọng: processor chạy trong bộ nhớ trước khi bất kỳ byte nào được ghi ra file, đảm bảo PII không bao giờ tồn tại trên đĩa.
 
-  Regex patterns implemented:
-  - `email`: standard RFC-like pattern covering subdomains
-  - `phone_vn`: covers Vietnamese formats including `+84`, `0xx`, with `./-` separators
-  - `cccd`: 12-digit Vietnamese national ID — uses `\b` word boundary to avoid matching credit card substrings
-  - `credit_card`: 16 digits with optional `- ` separators
-  - `passport` (bonus): `[A-Z]\d{7}` — Vietnamese passport format (e.g. B1234567)
-  - `vn_address` (bonus): keyword-anchored regex matching common Vietnamese address prefixes (số, đường, phường, quận, etc.)
+  Các regex pattern đã triển khai:
+  - `email`: pattern chuẩn bao gồm subdomain
+  - `phone_vn`: bao gồm định dạng Việt Nam (`+84`, `0xx`) với dấu phân cách `./-`
+  - `cccd`: CCCD 12 chữ số — dùng `\b` word boundary để tránh match nhầm vào số thẻ tín dụng
+  - `credit_card`: 16 chữ số với dấu phân cách `- ` tùy chọn
+  - `passport` (bonus): `[A-Z]\d{7}` — định dạng hộ chiếu Việt Nam (ví dụ B1234567)
+  - `vn_address` (bonus): regex neo theo từ khóa địa chỉ Việt Nam (số, đường, phường, quận, v.v.)
 
-  The `scrub_text()` function replaces each match with a labeled placeholder (`[REDACTED_EMAIL]`, `[REDACTED_PHONE_VN]`, etc.) rather than a generic `***` — this allows auditors to know *what type* of PII was present without seeing the value.
+  Hàm `scrub_text()` thay thế mỗi match bằng placeholder có nhãn (`[REDACTED_EMAIL]`, `[REDACTED_PHONE_VN]`...) thay vì `***` chung chung — giúp kiểm toán viên biết loại PII nào đã xuất hiện mà không thấy giá trị thực.
 
   **4. Langfuse v4 Tracing (`app/tracing.py` + `app/agent.py`)**
 
-  Encountered and resolved a major compatibility issue: the template used `langfuse.decorators` which does not exist in the installed SDK version (3.2.1 → upgraded to 4.7.1). Root cause: Langfuse v3+ migrated to OpenTelemetry (OTEL) as the underlying transport, breaking the v2 decorator API.
+  Phát hiện và giải quyết vấn đề tương thích: template dùng `langfuse.decorators` không tồn tại trong SDK đã cài (3.2.1). Nguyên nhân: Langfuse v3+ chuyển sang OpenTelemetry (OTEL) làm transport layer, phá vỡ decorator API cũ. Nâng cấp lên 4.7.1.
 
-  Solution: used `get_client().start_as_current_observation()` as a context manager with `propagate_attributes()` for trace-level metadata:
-  - `propagate_attributes(trace_name=..., user_id=..., session_id=..., tags=...)` must be called as a context manager (returns an OTEL baggage context), not a plain function call — this was a subtle API requirement discovered through testing.
-  - `as_type="span"` explicitly marks the observation type for correct rendering in Langfuse waterfall view.
-  - `flush_traces()` called after each response via `get_client().flush()` — necessary because Langfuse v4 buffers spans asynchronously via OTEL exporter; without an explicit flush, spans remain in memory and are lost if the process exits or between load test runs.
+  Giải pháp: dùng `get_client().start_as_current_observation()` làm context manager kết hợp `propagate_attributes()` cho metadata cấp trace:
+  - `propagate_attributes(trace_name=..., user_id=..., session_id=..., tags=...)` phải dùng với `with` vì nó trả về OTEL baggage context — gọi thẳng không có hiệu lực, phát hiện qua debug thực tế.
+  - `as_type="span"` đánh dấu rõ loại observation để Langfuse hiển thị đúng trong waterfall view.
+  - `flush_traces()` gọi sau mỗi response qua `get_client().flush()` — bắt buộc vì Langfuse v4 buffer span bất đồng bộ qua OTEL exporter; không flush thì span bị mất khi process kết thúc.
 
-  **5. Incident Analysis (rag_slow)**
+  **5. Phân tích Incident (rag_slow)**
 
-  Ran `scripts/inject_incident.py --scenario rag_slow`, then `scripts/load_test.py --concurrency 3`. Observed latency jump from ~155ms to ~8000ms. Debug flow:
-  - **Metrics** (`/metrics` endpoint): `latency_p95` jumped from 165ms to 2674ms (mixed window after disable)
-  - **Traces** (Langfuse): `agent.run` span duration confirmed ~8000ms total; metadata showed `doc_count` unchanged (RAG returned results, just slowly)
-  - **Logs** (`data/logs.jsonl`): `latency_ms` field in `response_sent` events confirmed 8000ms consistently across all features (qa and summary), ruling out feature-specific regression
-  - **Root cause**: `mock_rag.py:18` — `time.sleep(2.5)` triggered by `STATE["rag_slow"] = True`. The sleep happens before document retrieval returns, so every request regardless of query hits this bottleneck.
+  Chạy `scripts/inject_incident.py --scenario rag_slow`, sau đó `scripts/load_test.py --concurrency 3`. Quan sát latency tăng từ ~155ms lên ~8000ms. Luồng debug theo đúng thứ tự Metrics → Traces → Logs:
+  - **Metrics** (endpoint `/metrics`): `latency_p95` nhảy từ 165ms lên 2674ms
+  - **Traces** (Langfuse): span `agent.run` xác nhận tổng ~8000ms; metadata cho thấy `doc_count` không đổi (RAG vẫn có kết quả, chỉ là chậm)
+  - **Logs** (`data/logs.jsonl`): trường `latency_ms` trong `response_sent` xác nhận 8000ms đồng đều ở cả `qa` lẫn `summary`, loại trừ lỗi chỉ ở một feature
+  - **Root cause**: `mock_rag.py:18` — `time.sleep(2.5)` kích hoạt khi `STATE["rag_slow"] = True`, chặn mọi request tại bước retrieval
 
-  **6. Dashboard & SLO Design**
+  **6. Thiết kế Dashboard & SLO**
 
-  Created 6-panel "Day13 Observability Dashboard" in Langfuse covering: Latency P95, Traffic (observation count), Cost (sum), Token Input, Token Output, Error Count. Each panel filtered by `Trace Name ∈ {chat/qa, chat/summary}` to isolate lab traffic from test noise.
+  Tạo dashboard "Day13 Observability Dashboard" trên Langfuse gồm 6 panels: Latency P95, Traffic (số observations), Cost (tổng), Token Input, Token Output, Error Count. Mỗi panel filter theo `Trace Name` trong `{chat/qa, chat/summary}` để loại bỏ nhiễu từ các lần test thủ công.
 
-  SLO rationale:
-  - P95 < 3000ms: allows 20x headroom over baseline (155ms) while catching rag_slow-class incidents (8000ms)
-  - Error rate < 2%: standard web API SLO, achievable given mock LLM never throws
-  - Cost < $2.5/day: at current rate ($0.002/req avg), allows ~1250 requests/day before alerting
+  Lý do chọn ngưỡng SLO:
+  - P95 < 3000ms: headroom 20x so với baseline (155ms) trong khi vẫn bắt được incident dạng rag_slow (8000ms vượt ngưỡng rõ ràng)
+  - Error rate < 2%: SLO chuẩn cho web API, khả thi vì mock LLM không throw exception
+  - Cost < $2.5/ngày: ở mức hiện tại (~$0.002/request), cho phép ~1250 requests/ngày trước khi alert
 
 - [EVIDENCE_LINK]: https://github.com/Yangtai2504/2A202600823-NguyenThaiDuong-Day13/commits/main
 
@@ -116,4 +116,4 @@
 ## 6. Bonus Items (Optional)
 - [BONUS_COST_OPTIMIZATION]: N/A
 - [BONUS_AUDIT_LOGS]: N/A
-- [BONUS_CUSTOM_METRIC]: Added two extra PII redaction patterns (`passport`, `vn_address`) beyond the template's 4 defaults, improving PII coverage for Vietnamese user data without impacting `validate_logs.py` score.
+- [BONUS_CUSTOM_METRIC]: Thêm 2 pattern PII bổ sung (`passport` dạng `[A-Z]\d{7}` cho hộ chiếu Việt Nam và `vn_address` neo theo từ khóa địa chỉ) ngoài 4 pattern mặc định của template, mở rộng độ phủ PII cho dữ liệu người dùng Việt Nam mà không ảnh hưởng đến điểm `validate_logs.py`.
