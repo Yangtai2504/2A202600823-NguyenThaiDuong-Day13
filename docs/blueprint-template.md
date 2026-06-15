@@ -26,7 +26,7 @@
 - [TRACE_WATERFALL_EXPLANATION]: Span `agent.run` hiển thị toàn bộ pipeline xử lý một request. Trong sự kiện `rag_slow`, duration của span tăng từ ~155ms lên ~8000ms. Metadata của span cho thấy `doc_count` không đổi (RAG vẫn trả kết quả), trong khi `latency_ms` tăng đột biến — xác nhận tắc nghẽn nằm ở bước retrieval, không phải LLM generation.
 
 ### 3.2 Dashboard & SLOs
-- [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/dashboard-6panels.png
+- [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/dashboard-6panels-1.png | docs/screenshots/dashboard-6panels-2.png | docs/screenshots/dashboard-6panels-3.png | docs/screenshots/dashboard-6panels-4.png | docs/screenshots/dashboard-6panels-5.png | docs/screenshots/dashboard-6panels-6.png
 - [SLO_TABLE]:
 | SLI | Target | Window | Current Value |
 |---|---:|---|---:|
