@@ -1,10 +1,10 @@
 # Day 13 — Demo Commands
 
-> Tất cả lệnh chạy trong **Command Prompt** (cmd), từ thư mục `day13\`.
-
 ---
 
-## 1. Khởi động server
+## Bước 0 — Khởi động server
+
+Mở **terminal 1**, chạy:
 
 ```cmd
 cd "c:\VinAI\Lab coding\day13"
@@ -12,93 +12,150 @@ cd "c:\VinAI\Lab coding\day13"
 .venv\Scripts\uvicorn.exe app.main:app --port 8080
 ```
 
-Mở trình duyệt: **http://127.0.0.1:8080/docs** (Swagger UI để demo click)
+Chờ thấy dòng `Application startup complete.` thì server đã sẵn sàng.
 
 ---
 
-## 2. Kiểm tra nhanh (mở terminal thứ 2)
+## Bước 1 — Mở Swagger UI
+
+Mở trình duyệt, vào: **http://127.0.0.1:8080/docs**
+
+Sẽ thấy danh sách 5 endpoint:
+- `GET /health`
+- `GET /metrics`
+- `POST /chat`
+- `POST /incidents/{name}/enable`
+- `POST /incidents/{name}/disable`
+
+---
+
+## Bước 2 — Health check
+
+1. Click vào **`GET /health`**
+2. Click **"Try it out"** (góc phải)
+3. Click **"Execute"**
+4. Kéo xuống xem **Response body** — phải thấy `"tracing_enabled": true`
+
+---
+
+## Bước 3 — Gửi request thường (show correlation ID)
+
+1. Click vào **`POST /chat`**
+2. Click **"Try it out"**
+3. Xóa nội dung trong ô **Request body**, dán vào:
+
+```json
+{
+  "user_id": "demo01",
+  "session_id": "sess-abc",
+  "feature": "qa",
+  "message": "How do I request a refund?"
+}
+```
+
+4. Click **"Execute"**
+5. Xem **Response body** — chú ý trường `correlation_id` và `latency_ms`
+6. Kéo lên xem **Response headers** — có `x-request-id` và `x-response-time-ms`
+
+---
+
+## Bước 4 — Gửi request có PII (show PII scrubbing)
+
+1. Vẫn ở **`POST /chat`**, đổi body thành:
+
+```json
+{
+  "user_id": "demo01",
+  "session_id": "sess-pii",
+  "feature": "qa",
+  "message": "My email is test@example.com and phone 0901234567, how to refund?"
+}
+```
+
+2. Click **"Execute"**
+3. Sang **terminal 2**, xem log:
 
 ```cmd
 cd "c:\VinAI\Lab coding\day13"
-.venv\Scripts\activate
-```
-
-**Health check:**
-```cmd
-curl http://127.0.0.1:8080/health
-```
-
-**Xem metrics:**
-```cmd
-curl http://127.0.0.1:8080/metrics
-```
-
----
-
-## 3. Gửi request thường (show correlation ID + log enrichment)
-
-```cmd
-curl -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" -d "{\"user_id\":\"demo01\",\"session_id\":\"sess-abc\",\"feature\":\"qa\",\"message\":\"How do I request a refund?\"}"
-```
-
----
-
-## 4. Gửi request có PII (show PII scrubbing)
-
-```cmd
-curl -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" -d "{\"user_id\":\"demo01\",\"session_id\":\"sess-abc\",\"feature\":\"qa\",\"message\":\"My email is test@example.com and phone 0901234567, how to refund?\"}"
-```
-
-Kiểm tra log — PII đã bị redact:
-```cmd
 type data\logs.jsonl
 ```
 
+Tìm dòng có `"event": "request_received"` — trường `message_preview` sẽ thấy `[REDACTED_EMAIL]` và `[REDACTED_PHONE_VN]`, không có email/SĐT thật.
+
 ---
 
-## 5. Demo incident rag_slow (show latency spike)
+## Bước 5 — Demo incident rag_slow (show latency spike)
 
 **Enable incident:**
-```cmd
-curl -X POST http://127.0.0.1:8080/incidents/rag_slow/enable
+
+1. Click **`POST /incidents/{name}/enable`**
+2. Click **"Try it out"**
+3. Ô **name**: gõ `rag_slow`
+4. Click **"Execute"** — response trả về `"rag_slow": true`
+
+**Gửi request — sẽ chậm ~8 giây:**
+
+1. Quay lại **`POST /chat`**, dùng body:
+
+```json
+{
+  "user_id": "demo01",
+  "session_id": "sess-incident",
+  "feature": "qa",
+  "message": "What monitoring tools should I use?"
+}
 ```
 
-**Gửi request — latency sẽ ~8000ms:**
-```cmd
-curl -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" -d "{\"user_id\":\"demo01\",\"session_id\":\"sess-abc\",\"feature\":\"qa\",\"message\":\"What monitoring tools should I use?\"}"
-```
+2. Click **"Execute"** — chú ý Swagger sẽ loading lâu (~8s), xem `latency_ms` trong response
 
 **Disable incident (khôi phục):**
-```cmd
-curl -X POST http://127.0.0.1:8080/incidents/rag_slow/disable
-```
+
+1. Click **`POST /incidents/{name}/disable`**
+2. **name**: `rag_slow`
+3. Click **"Execute"** — response trả về `"rag_slow": false`
+4. Gửi lại request `/chat` — `latency_ms` trở về ~150ms
 
 ---
 
-## 6. Load test (tạo traces trên Langfuse)
+## Bước 6 — Xem metrics
+
+1. Click **`GET /metrics`**
+2. Click **"Try it out"** → **"Execute"**
+3. Thấy `latency_p95`, `total_requests`, `total_cost_usd`, `quality_score_avg`
+
+---
+
+## Bước 7 — Load test + traces (terminal 2)
 
 ```cmd
+cd "c:\VinAI\Lab coding\day13"
 .venv\Scripts\python.exe scripts\load_test.py --concurrency 3
 ```
 
+Sau đó mở **https://cloud.langfuse.com** — vào **Traces** để thấy traces mới với `trace_name = chat/qa` hoặc `chat/summary`.
+
 ---
 
-## 7. Validate logs (show 100/100)
+## Bước 8 — Validate logs (terminal 2)
 
 ```cmd
 .venv\Scripts\python.exe scripts\validate_logs.py
 ```
 
+Kết quả phải hiện: `Estimated Score: 100/100`
+
 ---
 
-## 8. Xem audit log (bonus)
+## Bước 9 — Xem audit log (bonus)
 
 ```cmd
 type data\audit.jsonl
 ```
 
+Thấy các sự kiện `request_audit`, `pii_redacted`, `incident_control` được ghi riêng.
+
 ---
 
-## 9. Dừng server
+## Bước 10 — Dừng server
 
-Nhấn `Ctrl+C` trong terminal đang chạy uvicorn.
+Nhấn `Ctrl+C` trong terminal 1.
