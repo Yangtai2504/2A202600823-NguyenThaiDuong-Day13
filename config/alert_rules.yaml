@@ -1,7 +1,7 @@
 alerts:
   - name: high_latency_p95
     severity: P2
-    condition: latency_p95_ms > 5000 for 30m
+    condition: latency_p95_ms > 2000 for 30m
     type: symptom-based
     owner: team-oncall
     runbook: docs/alerts.md#1-high-latency-p95

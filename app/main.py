@@ -12,7 +12,7 @@ from structlog.contextvars import bind_contextvars
 from .agent import LabAgent
 from .incidents import disable, enable, status
 from .logging_config import configure_logging, get_logger
-from .metrics import record_error, snapshot
+from .metrics import check_alerts, record_error, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
@@ -107,6 +107,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             cost_usd=result.cost_usd,
             quality_score=result.quality_score,
         )
+        check_alerts(log)
         flush_traces()
         return response
     except Exception as exc:  # pragma: no cover
