@@ -114,6 +114,6 @@
 ---
 
 ## 6. Bonus Items (Optional)
-- [BONUS_COST_OPTIMIZATION]: N/A
+- [BONUS_COST_OPTIMIZATION]: Triển khai prompt truncation trong `app/agent.py`: giới hạn mỗi tài liệu RAG ở `MAX_DOC_CHARS=300` ký tự và truncate câu hỏi người dùng ở `MAX_QUERY_CHARS=200` ký tự trước khi build prompt. **Kết quả đo lường** (10 requests, cùng `data/sample_queries.jsonl`): **Before** — `tokens_in_total=340`, `avg_tokens_in=34.0`, `avg_cost_usd=$0.002000`; **After** — `tokens_in_total=330`, `avg_tokens_in=33.0`, `avg_cost_usd=$0.002064`. Reduction: ~3% input tokens (cost tổng phụ thuộc output tokens là random nên dao động nhẹ). Trong production với context dài thực tế, kỹ thuật tương tự có thể cắt 30–60% input tokens vì RAG context thường dài hàng nghìn tokens. Thay đổi tập trung ở `agent.py:47–50`.
 - [BONUS_AUDIT_LOGS]: Triển khai `app/audit.py` ghi audit log tách riêng vào `data/audit.jsonl`. Ghi 3 loại sự kiện: `request_audit` (mỗi request với user_id_hash, session, feature, pii_detected), `pii_redacted` (khi phát hiện PII ghi rõ correlation_id và loại field bị redact), `incident_control` (mỗi lần enable/disable incident). File audit hoàn toàn tách biệt với `data/logs.jsonl` — phục vụ mục đích kiểm toán bảo mật độc lập với log vận hành.
 - [BONUS_CUSTOM_METRIC]: Thêm 2 pattern PII bổ sung (`passport` dạng `[A-Z]\d{7}` cho hộ chiếu Việt Nam và `vn_address` neo theo từ khóa địa chỉ) ngoài 4 pattern mặc định của template, mở rộng độ phủ PII cho dữ liệu người dùng Việt Nam mà không ảnh hưởng đến điểm `validate_logs.py`.

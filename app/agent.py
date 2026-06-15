@@ -21,6 +21,10 @@ class AgentResult:
     quality_score: float
 
 
+MAX_DOC_CHARS = 300   # truncate each retrieved doc
+MAX_QUERY_CHARS = 200  # truncate user message in prompt
+
+
 class LabAgent:
     def __init__(self, model: str = "claude-sonnet-4-5") -> None:
         self.model = model
@@ -40,7 +44,10 @@ class LabAgent:
         ):
             started = time.perf_counter()
             docs = retrieve(message)
-            prompt = f"Feature={feature}\nDocs={docs}\nQuestion={message}"
+            # Cost optimization: truncate to first doc + cap query length
+            top_doc = docs[0][:MAX_DOC_CHARS] if docs else ""
+            short_query = message[:MAX_QUERY_CHARS]
+            prompt = f"Feature={feature}\nDocs={top_doc}\nQuestion={short_query}"
             response = self.llm.generate(prompt)
             quality_score = self._heuristic_quality(message, response.text, docs)
             latency_ms = int((time.perf_counter() - started) * 1000)
