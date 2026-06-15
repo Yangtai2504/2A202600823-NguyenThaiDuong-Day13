@@ -12,7 +12,7 @@
 
 ## 2. Group Performance (Auto-Verified)
 - [VALIDATE_LOGS_FINAL_SCORE]: 100/100
-- [TOTAL_TRACES_COUNT]: 20
+- [TOTAL_TRACES_COUNT]: 33
 - [PII_LEAKS_FOUND]: 0
 
 ---
@@ -20,13 +20,13 @@
 ## 3. Technical Evidence (Group)
 
 ### 3.1 Logging & Tracing
-- [EVIDENCE_CORRELATION_ID_SCREENSHOT]: [Path to image]
-- [EVIDENCE_PII_REDACTION_SCREENSHOT]: [Path to image]
-- [EVIDENCE_TRACE_WATERFALL_SCREENSHOT]: [Path to image]
+- [EVIDENCE_CORRELATION_ID_SCREENSHOT]: docs/screenshots/correlation-id.png
+- [EVIDENCE_PII_REDACTION_SCREENSHOT]: docs/screenshots/redacted-email.png
+- [EVIDENCE_TRACE_WATERFALL_SCREENSHOT]: docs/screenshots/Trace-waterfall.png
 - [TRACE_WATERFALL_EXPLANATION]: The `LabAgent.run` span shows two child spans: the RAG retrieval step and the LLM generation step. During the `rag_slow` incident, the retrieval span ballooned to ~2500ms (vs. ~50ms baseline), while the LLM span remained stable — confirming RAG latency as the sole root cause.
 
 ### 3.2 Dashboard & SLOs
-- [DASHBOARD_6_PANELS_SCREENSHOT]: [Path to image]
+- [DASHBOARD_6_PANELS_SCREENSHOT]: docs/screenshots/Dashboards _ Langfuse.html
 - [SLO_TABLE]:
 | SLI | Target | Window | Current Value |
 |---|---:|---|---:|
@@ -36,7 +36,7 @@
 | Quality Score Avg | > 0.75 | 28d | 0.88 |
 
 ### 3.3 Alerts & Runbook
-- [ALERT_RULES_SCREENSHOT]: [Path to image]
+- [ALERT_RULES_SCREENSHOT]: docs/screenshots/alert-rules.png
 - [SAMPLE_RUNBOOK_LINK]: docs/alerts.md#1-high-latency-p95
 
 ---
