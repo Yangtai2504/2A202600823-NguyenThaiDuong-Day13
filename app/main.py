@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+
+load_dotenv()
 from fastapi.responses import JSONResponse
 from structlog.contextvars import bind_contextvars
 
@@ -13,13 +16,18 @@ from .metrics import record_error, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
-from .tracing import tracing_enabled
+from .tracing import flush_traces, tracing_enabled
 
 configure_logging()
 log = get_logger()
 app = FastAPI(title="Day 13 Observability Lab")
 app.add_middleware(CorrelationIdMiddleware)
 agent = LabAgent()
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    flush_traces()
 
 
 @app.on_event("startup")
@@ -44,8 +52,13 @@ async def metrics() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
+    bind_contextvars(
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        model=os.getenv("MODEL", "claude-sonnet-4-5"),
+        env=os.getenv("APP_ENV", "dev"),
+    )
     
     log.info(
         "request_received",
@@ -68,7 +81,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             cost_usd=result.cost_usd,
             payload={"answer_preview": summarize_text(result.answer)},
         )
-        return ChatResponse(
+        response = ChatResponse(
             answer=result.answer,
             correlation_id=request.state.correlation_id,
             latency_ms=result.latency_ms,
@@ -77,6 +90,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             cost_usd=result.cost_usd,
             quality_score=result.quality_score,
         )
+        flush_traces()
+        return response
     except Exception as exc:  # pragma: no cover
         error_type = type(exc).__name__
         record_error(error_type)
